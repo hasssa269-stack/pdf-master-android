@@ -40,18 +40,11 @@ import java.util.zip.ZipOutputStream
 import kotlin.math.min
 
 private enum class PdfAction {
-    NONE,
-    READ,
-    MERGE,
-    SPLIT,
-    COMPRESS,
-    IMAGES,
-    PDF_TO_WORD,
-    WORD_TO_PDF
+    NONE, READ, MERGE, SPLIT, COMPRESS, IMAGES,
+    PDF_TO_WORD, WORD_TO_PDF
 }
 
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -67,7 +60,6 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun PdfMasterScreen() {
-
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context as ComponentActivity
     val resolver = context.contentResolver
@@ -84,27 +76,18 @@ private fun PdfMasterScreen() {
     var startPage by remember { mutableStateOf("1") }
     var endPage by remember { mutableStateOf("1") }
 
-    var status by remember {
-        mutableStateOf("اختار الخدمة اللي بغيتي")
-    }
-
+    var status by remember { mutableStateOf("اختار الخدمة اللي بغيتي") }
     var busy by remember { mutableStateOf(false) }
 
     val isArabic = language == "ar"
 
     fun runTask(task: () -> String) {
-
         if (busy) return
 
         busy = true
-        status = if (isArabic) {
-            "جاري المعالجة..."
-        } else {
-            "Processing..."
-        }
+        status = if (isArabic) "جاري المعالجة..." else "Processing..."
 
         Thread {
-
             val result = try {
                 task()
             } catch (e: Exception) {
@@ -115,21 +98,14 @@ private fun PdfMasterScreen() {
                 status = result
                 busy = false
             }
-
         }.start()
     }
 
     fun openReaderPage(uri: Uri, pageIndex: Int) {
-
         if (busy) return
 
         runTask {
-
-            val result = renderPdfPage(
-                resolver,
-                uri,
-                pageIndex
-            )
+            val result = renderPdfPage(resolver, uri, pageIndex)
 
             activity.runOnUiThread {
                 preview = result.first
@@ -145,100 +121,52 @@ private fun PdfMasterScreen() {
         }
     }
 
-    // PDF output picker
+    // نافذة اختيار مكان حفظ PDF واسم الملف
     val pdfOutputPicker =
         rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument("application/pdf")
         ) { outputUri ->
-
             if (outputUri != null) {
-
                 val uris = selectedUris
                 val selectedAction = action
                 val firstPage = startPage.toIntOrNull()
                 val lastPage = endPage.toIntOrNull()
 
                 runTask {
-
                     when (selectedAction) {
-
-                        PdfAction.MERGE -> {
-                            mergePdfs(
-                                resolver,
-                                uris,
-                                outputUri
-                            )
-                        }
+                        PdfAction.MERGE ->
+                            mergePdfs(resolver, uris, outputUri)
 
                         PdfAction.SPLIT -> {
-
                             val first = firstPage
-                                ?: throw IllegalArgumentException(
-                                    "Invalid first page"
-                                )
-
+                                ?: throw IllegalArgumentException("Invalid first page")
                             val last = lastPage
-                                ?: throw IllegalArgumentException(
-                                    "Invalid last page"
-                                )
+                                ?: throw IllegalArgumentException("Invalid last page")
 
-                            if (uris.isEmpty()) {
-                                throw IllegalArgumentException(
-                                    "No PDF selected"
-                                )
-                            }
+                            require(uris.isNotEmpty()) { "No PDF selected" }
 
                             splitPdf(
-                                resolver,
-                                uris.first(),
-                                outputUri,
-                                first,
-                                last
+                                resolver, uris.first(), outputUri,
+                                first, last
                             )
                         }
 
                         PdfAction.COMPRESS -> {
-
-                            if (uris.isEmpty()) {
-                                throw IllegalArgumentException(
-                                    "No PDF selected"
-                                )
-                            }
-
-                            compressPdf(
-                                resolver,
-                                uris.first(),
-                                outputUri
-                            )
+                            require(uris.isNotEmpty()) { "No PDF selected" }
+                            compressPdf(resolver, uris.first(), outputUri)
                         }
 
-                        PdfAction.IMAGES -> {
-                            imagesToPdf(
-                                resolver,
-                                uris,
-                                outputUri
-                            )
-                        }
+                        PdfAction.IMAGES ->
+                            imagesToPdf(resolver, uris, outputUri)
 
                         PdfAction.WORD_TO_PDF -> {
-
-                            if (uris.isEmpty()) {
-                                throw IllegalArgumentException(
-                                    "No Word file selected"
-                                )
-                            }
-
-                            wordToPdf(
-                                resolver,
-                                uris.first(),
-                                outputUri
-                            )
+                            require(uris.isNotEmpty()) { "No Word file selected" }
+                            wordToPdf(resolver, uris.first(), outputUri)
                         }
 
                         else -> "No operation selected"
                     }
                 }
-
             } else {
                 status = if (isArabic) {
                     "تم إلغاء اختيار مكان الحفظ"
@@ -248,33 +176,20 @@ private fun PdfMasterScreen() {
             }
         }
 
-    // DOCX output picker
+    // نافذة اختيار مكان حفظ Word واسم الملف
     val wordOutputPicker =
         rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument(
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
         ) { outputUri ->
-
             if (outputUri != null) {
-
                 val uris = selectedUris
 
                 runTask {
-
-                    if (uris.isEmpty()) {
-                        throw IllegalArgumentException(
-                            "No PDF selected"
-                        )
-                    }
-
-                    pdfToWord(
-                        resolver,
-                        uris.first(),
-                        outputUri
-                    )
+                    require(uris.isNotEmpty()) { "No PDF selected" }
+                    pdfToWord(resolver, uris.first(), outputUri)
                 }
-
             } else {
                 status = if (isArabic) {
                     "تم إلغاء اختيار مكان الحفظ"
@@ -288,17 +203,13 @@ private fun PdfMasterScreen() {
         rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocument()
         ) { uri ->
-
             if (uri != null) {
-
                 when (action) {
-
                     PdfAction.READ -> {
                         readerUri = uri
                         preview = null
                         currentPage = 0
                         pageCount = 0
-
                         openReaderPage(uri, 0)
                     }
 
@@ -326,7 +237,6 @@ private fun PdfMasterScreen() {
         rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocument()
         ) { uri ->
-
             if (uri != null) {
                 selectedUris = listOf(uri)
                 pdfOutputPicker.launch("converted.pdf")
@@ -337,7 +247,6 @@ private fun PdfMasterScreen() {
         rememberLauncherForActivityResult(
             ActivityResultContracts.OpenMultipleDocuments()
         ) { uris ->
-
             if (uris.isNotEmpty()) {
                 selectedUris = uris
                 pdfOutputPicker.launch("merged.pdf")
@@ -348,7 +257,6 @@ private fun PdfMasterScreen() {
         rememberLauncherForActivityResult(
             ActivityResultContracts.OpenMultipleDocuments()
         ) { uris ->
-
             if (uris.isNotEmpty()) {
                 selectedUris = uris
                 pdfOutputPicker.launch("images.pdf")
@@ -359,7 +267,6 @@ private fun PdfMasterScreen() {
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF101820)
     ) {
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -367,15 +274,13 @@ private fun PdfMasterScreen() {
                 .padding(18.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-
                 Text(
-                    text = "PDF Master AI",
+                    text = "PDF Master",
                     color = Color(0xFF00D68F),
                     fontSize = 25.sp,
                     fontWeight = FontWeight.Bold
@@ -464,16 +369,13 @@ private fun PdfMasterScreen() {
             }
 
             if (action == PdfAction.SPLIT) {
-
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = Color(0xFF1C2935)
                     )
                 ) {
-
                     Column(Modifier.padding(14.dp)) {
-
                         Text(
                             text = if (isArabic) {
                                 "حدد الصفحات التي تريد استخراجها"
@@ -491,10 +393,7 @@ private fun PdfMasterScreen() {
                                 startPage = it.filter(Char::isDigit)
                             },
                             label = {
-                                Text(
-                                    if (isArabic) "من الصفحة"
-                                    else "From page"
-                                )
+                                Text(if (isArabic) "من الصفحة" else "From page")
                             },
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Number
@@ -510,10 +409,7 @@ private fun PdfMasterScreen() {
                                 endPage = it.filter(Char::isDigit)
                             },
                             label = {
-                                Text(
-                                    if (isArabic) "إلى الصفحة"
-                                    else "To page"
-                                )
+                                Text(if (isArabic) "إلى الصفحة" else "To page")
                             },
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Number
@@ -526,40 +422,28 @@ private fun PdfMasterScreen() {
                         Button(
                             enabled = !busy,
                             onClick = {
-
                                 val first = startPage.toIntOrNull()
                                 val last = endPage.toIntOrNull()
 
                                 if (
-                                    first == null ||
-                                    last == null ||
-                                    first < 1 ||
-                                    last < first
+                                    first == null || last == null ||
+                                    first < 1 || last < first
                                 ) {
-
                                     status = if (isArabic) {
                                         "أدخل أرقام صفحات صحيحة"
                                     } else {
                                         "Enter a valid page range"
                                     }
-
                                 } else {
-
                                     action = PdfAction.SPLIT
-
-                                    pdfPicker.launch(
-                                        arrayOf("application/pdf")
-                                    )
+                                    pdfPicker.launch(arrayOf("application/pdf"))
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                if (isArabic) {
-                                    "اختار PDF وقسمو"
-                                } else {
-                                    "Choose PDF and split"
-                                }
+                                if (isArabic) "اختار PDF وقسمو"
+                                else "Choose PDF and split"
                             )
                         }
                     }
@@ -631,7 +515,6 @@ private fun PdfMasterScreen() {
                 enabled = !busy
             ) {
                 action = PdfAction.WORD_TO_PDF
-
                 wordPicker.launch(
                     arrayOf(
                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -642,9 +525,7 @@ private fun PdfMasterScreen() {
             Spacer(Modifier.height(18.dp))
 
             if (busy) {
-                CircularProgressIndicator(
-                    color = Color(0xFF00D68F)
-                )
+                CircularProgressIndicator(color = Color(0xFF00D68F))
                 Spacer(Modifier.height(10.dp))
             }
 
@@ -655,7 +536,6 @@ private fun PdfMasterScreen() {
             )
 
             if (preview != null) {
-
                 Spacer(Modifier.height(20.dp))
 
                 Text(
@@ -681,13 +561,11 @@ private fun PdfMasterScreen() {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-
                     Button(
                         enabled = !busy && currentPage > 0,
                         onClick = {
-                            val uri = readerUri
-                            if (uri != null) {
-                                openReaderPage(uri, currentPage - 1)
+                            readerUri?.let {
+                                openReaderPage(it, currentPage - 1)
                             }
                         }
                     ) {
@@ -697,9 +575,8 @@ private fun PdfMasterScreen() {
                     Button(
                         enabled = !busy && currentPage < pageCount - 1,
                         onClick = {
-                            val uri = readerUri
-                            if (uri != null) {
-                                openReaderPage(uri, currentPage + 1)
+                            readerUri?.let {
+                                openReaderPage(it, currentPage + 1)
                             }
                         }
                     ) {
@@ -711,7 +588,7 @@ private fun PdfMasterScreen() {
             Spacer(Modifier.height(25.dp))
 
             Text(
-                text = "PDF Master AI",
+                text = "PDF Master",
                 color = Color.Gray,
                 fontSize = 12.sp
             )
@@ -726,7 +603,6 @@ private fun ServiceButton(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -735,11 +611,7 @@ private fun ServiceButton(
             containerColor = Color(0xFF1C2935)
         )
     ) {
-
-        Column(
-            modifier = Modifier.padding(12.dp)
-        ) {
-
+        Column(Modifier.padding(12.dp)) {
             Button(
                 onClick = onClick,
                 enabled = enabled,
@@ -766,36 +638,27 @@ private fun renderPdfPage(
     uri: Uri,
     pageIndex: Int
 ): Pair<Bitmap, Int> {
-
     val descriptor = resolver.openFileDescriptor(uri, "r")
         ?: throw IllegalArgumentException("Cannot open PDF")
 
     descriptor.use { pfd ->
-
         PdfRenderer(pfd).use { renderer ->
-
             require(pageIndex in 0 until renderer.pageCount) {
                 "Page does not exist"
             }
 
             renderer.openPage(pageIndex).use { page ->
-
                 val width = 1200
-
                 val height = (
                     width.toFloat() * page.height / page.width
                 ).toInt().coerceAtLeast(1)
 
                 val bitmap = Bitmap.createBitmap(
-                    width,
-                    height,
-                    Bitmap.Config.ARGB_8888
+                    width, height, Bitmap.Config.ARGB_8888
                 )
 
                 page.render(
-                    bitmap,
-                    null,
-                    null,
+                    bitmap, null, null,
                     PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
                 )
 
@@ -810,7 +673,6 @@ private fun mergePdfs(
     sources: List<Uri>,
     outputUri: Uri
 ): String {
-
     require(sources.size >= 2) {
         "Choose at least two PDF files"
     }
@@ -818,16 +680,12 @@ private fun mergePdfs(
     val destination = PDDocument()
 
     try {
-
         for (uri in sources) {
-
             val input = resolver.openInputStream(uri)
                 ?: throw IllegalArgumentException("Cannot open source PDF")
 
             input.use { stream ->
-
                 PDDocument.load(stream).use { source ->
-
                     for (index in 0 until source.numberOfPages) {
                         destination.importPage(source.getPage(index))
                     }
@@ -838,10 +696,7 @@ private fun mergePdfs(
         val output = resolver.openOutputStream(outputUri)
             ?: throw IllegalArgumentException("Cannot create output file")
 
-        output.use { stream ->
-            destination.save(stream)
-        }
-
+        output.use { destination.save(it) }
     } finally {
         destination.close()
     }
@@ -856,14 +711,11 @@ private fun splitPdf(
     firstPage: Int,
     lastPage: Int
 ): String {
-
     val input = resolver.openInputStream(sourceUri)
         ?: throw IllegalArgumentException("Cannot open PDF")
 
     input.use { stream ->
-
         PDDocument.load(stream).use { source ->
-
             require(firstPage >= 1 && lastPage >= firstPage) {
                 "Invalid page range"
             }
@@ -875,7 +727,6 @@ private fun splitPdf(
             val outputDocument = PDDocument()
 
             try {
-
                 for (index in (firstPage - 1) until lastPage) {
                     outputDocument.importPage(source.getPage(index))
                 }
@@ -883,10 +734,7 @@ private fun splitPdf(
                 val output = resolver.openOutputStream(outputUri)
                     ?: throw IllegalArgumentException("Cannot create output file")
 
-                output.use { destination ->
-                    outputDocument.save(destination)
-                }
-
+                output.use { outputDocument.save(it) }
             } finally {
                 outputDocument.close()
             }
@@ -901,66 +749,48 @@ private fun compressPdf(
     sourceUri: Uri,
     outputUri: Uri
 ): String {
-
     val descriptor = resolver.openFileDescriptor(sourceUri, "r")
         ?: throw IllegalArgumentException("Cannot open PDF")
 
     descriptor.use { pfd ->
-
         PdfRenderer(pfd).use { renderer ->
-
             val outputDocument = PdfDocument()
 
             try {
-
                 for (index in 0 until renderer.pageCount) {
-
                     renderer.openPage(index).use { page ->
-
                         val width = 1000
-
                         val height = (
                             width.toFloat() * page.height / page.width
                         ).toInt().coerceIn(1, 2000)
 
                         val bitmap = Bitmap.createBitmap(
-                            width,
-                            height,
-                            Bitmap.Config.RGB_565
+                            width, height, Bitmap.Config.RGB_565
                         )
 
                         try {
-
                             page.render(
-                                bitmap,
-                                null,
-                                null,
+                                bitmap, null, null,
                                 PdfRenderer.Page.RENDER_MODE_FOR_PRINT
                             )
 
                             val pageWidth = 595
-
                             val pageHeight = (
                                 pageWidth.toFloat() * page.height / page.width
                             ).toInt().coerceAtLeast(1)
 
                             val info = PdfDocument.PageInfo.Builder(
-                                pageWidth,
-                                pageHeight,
-                                index + 1
+                                pageWidth, pageHeight, index + 1
                             ).create()
 
                             val newPage = outputDocument.startPage(info)
 
                             newPage.canvas.drawBitmap(
-                                bitmap,
-                                null,
-                                Rect(0, 0, pageWidth, pageHeight),
-                                null
+                                bitmap, null,
+                                Rect(0, 0, pageWidth, pageHeight), null
                             )
 
                             outputDocument.finishPage(newPage)
-
                         } finally {
                             bitmap.recycle()
                         }
@@ -970,10 +800,7 @@ private fun compressPdf(
                 val output = resolver.openOutputStream(outputUri)
                     ?: throw IllegalArgumentException("Cannot create output file")
 
-                output.use { stream ->
-                    outputDocument.writeTo(stream)
-                }
-
+                output.use { outputDocument.writeTo(it) }
             } finally {
                 outputDocument.close()
             }
@@ -988,7 +815,6 @@ private fun imagesToPdf(
     imageUris: List<Uri>,
     outputUri: Uri
 ): String {
-
     require(imageUris.isNotEmpty()) {
         "Choose at least one image"
     }
@@ -996,9 +822,7 @@ private fun imagesToPdf(
     val document = PdfDocument()
 
     try {
-
         imageUris.forEachIndexed { index, uri ->
-
             val input = resolver.openInputStream(uri)
                 ?: throw IllegalArgumentException("Cannot open image")
 
@@ -1007,14 +831,11 @@ private fun imagesToPdf(
             } ?: throw IllegalArgumentException("Unsupported image")
 
             try {
-
                 val pageWidth = 595
                 val pageHeight = 842
 
                 val info = PdfDocument.PageInfo.Builder(
-                    pageWidth,
-                    pageHeight,
-                    index + 1
+                    pageWidth, pageHeight, index + 1
                 ).create()
 
                 val page = document.startPage(info)
@@ -1026,24 +847,19 @@ private fun imagesToPdf(
 
                 val drawWidth = (bitmap.width * scale).toInt()
                 val drawHeight = (bitmap.height * scale).toInt()
-
                 val left = (pageWidth - drawWidth) / 2
                 val top = (pageHeight - drawHeight) / 2
 
                 page.canvas.drawBitmap(
-                    bitmap,
-                    null,
+                    bitmap, null,
                     Rect(
-                        left,
-                        top,
-                        left + drawWidth,
-                        top + drawHeight
+                        left, top,
+                        left + drawWidth, top + drawHeight
                     ),
                     null
                 )
 
                 document.finishPage(page)
-
             } finally {
                 bitmap.recycle()
             }
@@ -1052,10 +868,7 @@ private fun imagesToPdf(
         val output = resolver.openOutputStream(outputUri)
             ?: throw IllegalArgumentException("Cannot create output file")
 
-        output.use { stream ->
-            document.writeTo(stream)
-        }
-
+        output.use { document.writeTo(it) }
     } finally {
         document.close()
     }
@@ -1064,33 +877,26 @@ private fun imagesToPdf(
 }
 
 // PDF TO WORD
-// Each PDF page is inserted as a high-resolution image.
-// This preserves the visual appearance of text, tables and pictures.
+// يحافظ على شكل الصفحات بإدراج كل صفحة كصورة داخل DOCX.
+// النص داخل DOCX الناتج لن يكون قابلاً للتحرير بشكل مستقل.
 
 private fun pdfToWord(
     resolver: ContentResolver,
     pdfUri: Uri,
     outputUri: Uri
 ): String {
-
     val descriptor = resolver.openFileDescriptor(pdfUri, "r")
         ?: throw IllegalArgumentException("Cannot open PDF")
 
     descriptor.use { pfd ->
-
         PdfRenderer(pfd).use { renderer ->
-
-            require(renderer.pageCount > 0) {
-                "PDF has no pages"
-            }
+            require(renderer.pageCount > 0) { "PDF has no pages" }
 
             val output = resolver.openOutputStream(outputUri)
                 ?: throw IllegalArgumentException("Cannot create DOCX")
 
             output.use { stream ->
-
                 ZipOutputStream(stream).use { zip ->
-
                     val relationships = StringBuilder()
                     val body = StringBuilder()
 
@@ -1099,36 +905,25 @@ private fun pdfToWord(
                     )
 
                     for (index in 0 until renderer.pageCount) {
-
                         renderer.openPage(index).use { page ->
-
                             val width = 1100
-
                             val height = (
                                 width.toFloat() * page.height / page.width
                             ).toInt().coerceAtLeast(1)
 
                             val bitmap = Bitmap.createBitmap(
-                                width,
-                                height,
-                                Bitmap.Config.ARGB_8888
+                                width, height, Bitmap.Config.ARGB_8888
                             )
 
                             try {
-
                                 page.render(
-                                    bitmap,
-                                    null,
-                                    null,
+                                    bitmap, null, null,
                                     PdfRenderer.Page.RENDER_MODE_FOR_PRINT
                                 )
 
                                 val imageStream = ByteArrayOutputStream()
-
                                 bitmap.compress(
-                                    Bitmap.CompressFormat.PNG,
-                                    100,
-                                    imageStream
+                                    Bitmap.CompressFormat.PNG, 100, imageStream
                                 )
 
                                 val imageName = "page${index + 1}.png"
@@ -1137,7 +932,6 @@ private fun pdfToWord(
                                 zip.putNextEntry(
                                     ZipEntry("word/media/$imageName")
                                 )
-
                                 zip.write(imageStream.toByteArray())
                                 zip.closeEntry()
 
@@ -1147,7 +941,6 @@ private fun pdfToWord(
 
                                 val maxWidth = 5943600L
                                 val maxHeight = 8380000L
-
                                 val ratio = min(
                                     maxWidth.toFloat() / width,
                                     maxHeight.toFloat() / height
@@ -1166,39 +959,34 @@ private fun pdfToWord(
                                     """
                                     <w:p>
                                       <w:pPr><w:jc w:val="center"/></w:pPr>
-                                      <w:r>
-                                        <w:drawing>
-                                          <wp:inline>
-                                            <wp:extent cx="$imageWidth" cy="$imageHeight"/>
-                                            <wp:docPr id="${index + 1}" name="PDF Page ${index + 1}"/>
-                                            <a:graphic>
-                                              <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
-                                                <pic:pic>
-                                                  <pic:nvPicPr>
-                                                    <pic:cNvPr id="${index + 1}" name="$imageName"/>
-                                                    <pic:cNvPicPr/>
-                                                  </pic:nvPicPr>
-                                                  <pic:blipFill>
-                                                    <a:blip r:embed="$relationId"/>
-                                                    <a:stretch><a:fillRect/></a:stretch>
-                                                  </pic:blipFill>
-                                                  <pic:spPr>
-                                                    <a:xfrm>
-                                                      <a:off x="0" y="0"/>
-                                                      <a:ext cx="$imageWidth" cy="$imageHeight"/>
-                                                    </a:xfrm>
-                                                    <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
-                                                  </pic:spPr>
-                                                </pic:pic>
-                                              </a:graphicData>
-                                            </a:graphic>
-                                          </wp:inline>
-                                        </w:drawing>
-                                      </w:r>
+                                      <w:r><w:drawing><wp:inline>
+                                        <wp:extent cx="$imageWidth" cy="$imageHeight"/>
+                                        <wp:docPr id="${index + 1}" name="PDF Page ${index + 1}"/>
+                                        <a:graphic>
+                                          <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                                            <pic:pic>
+                                              <pic:nvPicPr>
+                                                <pic:cNvPr id="${index + 1}" name="$imageName"/>
+                                                <pic:cNvPicPr/>
+                                              </pic:nvPicPr>
+                                              <pic:blipFill>
+                                                <a:blip r:embed="$relationId"/>
+                                                <a:stretch><a:fillRect/></a:stretch>
+                                              </pic:blipFill>
+                                              <pic:spPr>
+                                                <a:xfrm>
+                                                  <a:off x="0" y="0"/>
+                                                  <a:ext cx="$imageWidth" cy="$imageHeight"/>
+                                                </a:xfrm>
+                                                <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+                                              </pic:spPr>
+                                            </pic:pic>
+                                          </a:graphicData>
+                                        </a:graphic>
+                                      </wp:inline></w:drawing></w:r>
                                     </w:p>
                                     """.trimIndent()
                                 )
-
                             } finally {
                                 bitmap.recycle()
                             }
@@ -1254,25 +1042,21 @@ private fun pdfToWord(
 }
 
 // WORD TO PDF
-// Extracts paragraphs, basic table text and embedded images.
+// استخراج النصوص والصور بشكل أساسي، وليس إعادة إنتاج التنسيق الأصلي كاملاً.
 
 private fun wordToPdf(
     resolver: ContentResolver,
     docxUri: Uri,
     outputUri: Uri
 ): String {
-
     val input = resolver.openInputStream(docxUri)
         ?: throw IllegalArgumentException("Cannot open Word file")
 
     val entries = mutableMapOf<String, ByteArray>()
 
     input.use { source ->
-
         ZipInputStream(source).use { zip ->
-
             while (true) {
-
                 val entry = zip.nextEntry ?: break
 
                 if (!entry.isDirectory) {
@@ -1294,16 +1078,9 @@ private fun wordToPdf(
 
     val factory = XmlPullParserFactory.newInstance()
     val parser = factory.newPullParser()
+    parser.setInput(ByteArrayInputStream(xml), "UTF-8")
 
-    parser.setInput(
-        ByteArrayInputStream(xml),
-        "UTF-8"
-    )
-
-    var inTable = false
-    var inRow = false
     var inCell = false
-
     var paragraphText = StringBuilder()
     var cellText = StringBuilder()
     var rowCells = mutableListOf<String>()
@@ -1311,114 +1088,66 @@ private fun wordToPdf(
     var event = parser.eventType
 
     while (event != XmlPullParser.END_DOCUMENT) {
-
         when (event) {
-
             XmlPullParser.START_TAG -> {
-
                 when (parser.name) {
-
-                    "tbl" -> inTable = true
-
-                    "tr" -> {
-                        inRow = true
-                        rowCells = mutableListOf()
-                    }
-
+                    "tr" -> rowCells = mutableListOf()
                     "tc" -> {
                         inCell = true
                         cellText = StringBuilder()
                     }
-
-                    "p" -> {
-                        paragraphText = StringBuilder()
-                    }
-
+                    "p" -> paragraphText = StringBuilder()
                     "blip" -> {
-
                         val id = parser.getAttributeValue(
                             "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
                             "embed"
                         )
-
-                        if (id != null) {
-                            imageIds.add(id)
-                        }
+                        if (id != null) imageIds.add(id)
                     }
                 }
             }
 
             XmlPullParser.TEXT -> {
-
-                if (inCell) {
-                    cellText.append(parser.text)
-                } else {
-                    paragraphText.append(parser.text)
-                }
+                if (inCell) cellText.append(parser.text)
+                else paragraphText.append(parser.text)
             }
 
             XmlPullParser.END_TAG -> {
-
                 when (parser.name) {
-
                     "p" -> {
-
                         val value = paragraphText.toString().trim()
-
                         if (value.isNotEmpty() && !inCell) {
                             paragraphs.add(value)
                         }
                     }
-
                     "tc" -> {
                         rowCells.add(cellText.toString().trim())
                         inCell = false
                     }
-
                     "tr" -> {
-
                         if (rowCells.isNotEmpty()) {
-                            paragraphs.add(
-                                rowCells.joinToString("    |    ")
-                            )
+                            paragraphs.add(rowCells.joinToString("    |    "))
                         }
-
-                        inRow = false
-                    }
-
-                    "tbl" -> {
-                        inTable = false
                     }
                 }
             }
         }
-
         event = parser.next()
     }
-
-    // Read image relationships.
 
     val relationshipXml = entries["word/_rels/document.xml.rels"]
     val imageTargets = mutableMapOf<String, String>()
 
     if (relationshipXml != null) {
-
         val relParser = factory.newPullParser()
-
-        relParser.setInput(
-            ByteArrayInputStream(relationshipXml),
-            "UTF-8"
-        )
+        relParser.setInput(ByteArrayInputStream(relationshipXml), "UTF-8")
 
         var relEvent = relParser.eventType
-
         while (relEvent != XmlPullParser.END_DOCUMENT) {
-
             if (
                 relEvent == XmlPullParser.START_TAG &&
                 relParser.name == "Relationship"
             ) {
-
                 val id = relParser.getAttributeValue(null, "Id")
                 val target = relParser.getAttributeValue(null, "Target")
 
@@ -1426,7 +1155,6 @@ private fun wordToPdf(
                     imageTargets[id] = target
                 }
             }
-
             relEvent = relParser.next()
         }
     }
@@ -1434,7 +1162,6 @@ private fun wordToPdf(
     val document = PdfDocument()
 
     try {
-
         val pageWidth = 595
         val pageHeight = 842
         val margin = 35f
@@ -1444,36 +1171,24 @@ private fun wordToPdf(
             textSize = 11f
         }
 
-        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.BLACK
-            textSize = 14f
-            isFakeBoldText = true
-        }
-
         var pageNumber = 1
-
         var page = document.startPage(
             PdfDocument.PageInfo.Builder(
-                pageWidth,
-                pageHeight,
-                pageNumber
+                pageWidth, pageHeight, pageNumber
             ).create()
         )
 
         var canvas = page.canvas
         var y = margin + 15f
+        val maxWidth = pageWidth - margin * 2
 
         fun newPage() {
-
             document.finishPage(page)
-
             pageNumber++
 
             page = document.startPage(
                 PdfDocument.PageInfo.Builder(
-                    pageWidth,
-                    pageHeight,
-                    pageNumber
+                    pageWidth, pageHeight, pageNumber
                 ).create()
             )
 
@@ -1481,90 +1196,49 @@ private fun wordToPdf(
             y = margin + 15f
         }
 
-        val maxWidth = pageWidth - margin * 2
-
-        // Draw extracted text and table rows.
-
         for (text in paragraphs) {
-
             val words = text.split(Regex("\\s+"))
             var line = ""
 
             for (word in words) {
-
-                val candidate = if (line.isEmpty()) {
-                    word
-                } else {
-                    "$line $word"
-                }
+                val candidate = if (line.isEmpty()) word else "$line $word"
 
                 if (
                     paint.measureText(candidate) > maxWidth &&
                     line.isNotEmpty()
                 ) {
-
-                    if (y > pageHeight - margin) {
-                        newPage()
-                    }
-
-                    canvas.drawText(
-                        line,
-                        margin,
-                        y,
-                        paint
-                    )
-
+                    if (y > pageHeight - margin) newPage()
+                    canvas.drawText(line, margin, y, paint)
                     y += 17f
                     line = word
-
                 } else {
                     line = candidate
                 }
             }
 
             if (line.isNotEmpty()) {
-
-                if (y > pageHeight - margin) {
-                    newPage()
-                }
-
-                canvas.drawText(
-                    line,
-                    margin,
-                    y,
-                    paint
-                )
-
+                if (y > pageHeight - margin) newPage()
+                canvas.drawText(line, margin, y, paint)
                 y += 22f
             }
         }
 
-        // Draw embedded images.
-
         for (id in imageIds.distinct()) {
-
             val target = imageTargets[id] ?: continue
 
-            val imagePath = if (target.startsWith("/")) {
+            val normalizedPath = if (target.startsWith("/")) {
                 target.removePrefix("/")
             } else {
                 "word/$target"
-            }
-
-            val normalizedPath = imagePath
-                .replace("word/../", "")
-                .replace("../", "")
+            }.replace("word/../", "").replace("../", "")
 
             val imageBytes = entries[normalizedPath] ?: continue
 
             val bitmap = BitmapFactory.decodeByteArray(
-                imageBytes,
-                0,
-                imageBytes.size
+                imageBytes, 0, imageBytes.size
             ) ?: continue
 
             try {
-
                 val scale = min(
                     maxWidth / bitmap.width,
                     250f / bitmap.height
@@ -1573,16 +1247,12 @@ private fun wordToPdf(
                 val width = (bitmap.width * scale).toInt()
                 val height = (bitmap.height * scale).toInt()
 
-                if (y + height > pageHeight - margin) {
-                    newPage()
-                }
+                if (y + height > pageHeight - margin) newPage()
 
                 canvas.drawBitmap(
-                    bitmap,
-                    null,
+                    bitmap, null,
                     Rect(
-                        margin.toInt(),
-                        y.toInt(),
+                        margin.toInt(), y.toInt(),
                         margin.toInt() + width,
                         y.toInt() + height
                     ),
@@ -1590,7 +1260,6 @@ private fun wordToPdf(
                 )
 
                 y += height + 18f
-
             } finally {
                 bitmap.recycle()
             }
@@ -1601,10 +1270,7 @@ private fun wordToPdf(
         val output = resolver.openOutputStream(outputUri)
             ?: throw IllegalArgumentException("Cannot create PDF")
 
-        output.use { stream ->
-            document.writeTo(stream)
-        }
-
+        output.use { document.writeTo(it) }
     } finally {
         document.close()
     }
@@ -1617,7 +1283,6 @@ private fun addZipEntry(
     name: String,
     content: String
 ) {
-
     zip.putNextEntry(ZipEntry(name))
     zip.write(content.toByteArray(Charsets.UTF_8))
     zip.closeEntry()
