@@ -1,9 +1,8 @@
-
 package com.pdfmaster.ai
 
+import android.content.ContentResolver
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.graphics.Rect
 import android.graphics.pdf.PdfDocument
 import android.graphics.pdf.PdfRenderer
@@ -18,6 +17,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
@@ -57,13 +58,16 @@ private fun PdfMasterScreen() {
 
     var language by remember { mutableStateOf("ar") }
     var action by remember { mutableStateOf(PdfAction.NONE) }
-    var pendingUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+
     var readerUri by remember { mutableStateOf<Uri?>(null) }
     var preview by remember { mutableStateOf<Bitmap?>(null) }
     var currentPage by remember { mutableIntStateOf(0) }
     var pageCount by remember { mutableIntStateOf(0) }
+
     var startPage by remember { mutableStateOf("1") }
     var endPage by remember { mutableStateOf("1") }
+
     var status by remember { mutableStateOf("اختار الخدمة اللي بغيتي") }
     var busy by remember { mutableStateOf(false) }
 
@@ -71,6 +75,7 @@ private fun PdfMasterScreen() {
 
     fun runTask(task: () -> String) {
         if (busy) return
+
         busy = true
         status = if (isArabic) "جاري المعالجة..." else "Processing..."
 
@@ -88,14 +93,18 @@ private fun PdfMasterScreen() {
         }.start()
     }
 
-    fun showPage(uri: Uri, pageIndex: Int) {
+    fun openReaderPage(uri: Uri, pageIndex: Int) {
+        if (busy) return
+
         runTask {
             val result = renderPdfPage(resolver, uri, pageIndex)
+
             activity.runOnUiThread {
                 preview = result.first
                 currentPage = pageIndex
                 pageCount = result.second
             }
+
             if (isArabic) {
                 "الصفحة ${pageIndex + 1} من ${result.second}"
             } else {
@@ -109,31 +118,64 @@ private fun PdfMasterScreen() {
             ActivityResultContracts.CreateDocument("application/pdf")
         ) { outputUri ->
             if (outputUri != null) {
-                val sources = pendingUris
+                val uris = selectedUris
                 val selectedAction = action
+                val firstPage = startPage.toIntOrNull()
+                val lastPage = endPage.toIntOrNull()
 
                 runTask {
                     when (selectedAction) {
-                        PdfAction.MERGE ->
-                            mergePdfs(resolver, sources, outputUri)
-
-                        PdfAction.SPLIT -> {
-                            val first = startPage.toIntOrNull()
-                                ?: throw IllegalArgumentException("Invalid start page")
-                            val last = endPage.toIntOrNull()
-                                ?: throw IllegalArgumentException("Invalid end page")
-
-                            splitPdf(resolver, sources.first(), outputUri, first, last)
+                        PdfAction.MERGE -> {
+                            mergePdfs(resolver, uris, outputUri)
                         }
 
-                        PdfAction.COMPRESS ->
-                            compressPdf(resolver, sources.first(), outputUri)
+                        PdfAction.SPLIT -> {
+                            val first = firstPage
+                                ?: throw IllegalArgumentException(
+                                    "Invalid first page number"
+                                )
+                            val last = lastPage
+                                ?: throw IllegalArgumentException(
+                                    "Invalid last page number"
+                                )
 
-                        PdfAction.IMAGES ->
-                            imagesToPdf(resolver, sources, outputUri)
+                            if (uris.isEmpty()) {
+                                throw IllegalArgumentException("No PDF selected")
+                            }
+
+                            splitPdf(
+                                resolver,
+                                uris.first(),
+                                outputUri,
+                                first,
+                                last
+                            )
+                        }
+
+                        PdfAction.COMPRESS -> {
+                            if (uris.isEmpty()) {
+                                throw IllegalArgumentException("No PDF selected")
+                            }
+
+                            compressPdf(
+                                resolver,
+                                uris.first(),
+                                outputUri
+                            )
+                        }
+
+                        PdfAction.IMAGES -> {
+                            imagesToPdf(resolver, uris, outputUri)
+                        }
 
                         else -> "No operation selected"
                     }
+                }
+            } else {
+                status = if (isArabic) {
+                    "تم إلغاء اختيار مكان الحفظ"
+                } else {
+                    "Saving cancelled"
                 }
             }
         }
@@ -146,16 +188,20 @@ private fun PdfMasterScreen() {
                 when (action) {
                     PdfAction.READ -> {
                         readerUri = uri
+                        preview = null
                         currentPage = 0
-                        showPage(uri, 0)
+                        pageCount = 0
+                        openReaderPage(uri, 0)
                     }
 
-                    PdfAction.SPLIT, PdfAction.COMPRESS -> {
-                        pendingUris = listOf(uri)
-                        val fileName =
-                            if (action == PdfAction.SPLIT) "split.pdf"
-                            else "compressed.pdf"
-                        outputPicker.launch(fileName)
+                    PdfAction.SPLIT -> {
+                        selectedUris = listOf(uri)
+                        outputPicker.launch("split.pdf")
+                    }
+
+                    PdfAction.COMPRESS -> {
+                        selectedUris = listOf(uri)
+                        outputPicker.launch("compressed.pdf")
                     }
 
                     else -> Unit
@@ -168,7 +214,7 @@ private fun PdfMasterScreen() {
             ActivityResultContracts.OpenMultipleDocuments()
         ) { uris ->
             if (uris.isNotEmpty()) {
-                pendingUris = uris
+                selectedUris = uris
                 outputPicker.launch("merged.pdf")
             }
         }
@@ -178,7 +224,7 @@ private fun PdfMasterScreen() {
             ActivityResultContracts.OpenMultipleDocuments()
         ) { uris ->
             if (uris.isNotEmpty()) {
-                pendingUris = uris
+                selectedUris = uris
                 outputPicker.launch("images.pdf")
             }
         }
@@ -200,7 +246,7 @@ private fun PdfMasterScreen() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "PDF Master AI",
+                    text = "PDF Master AI",
                     color = Color(0xFF00D68F),
                     fontSize = 25.sp,
                     fontWeight = FontWeight.Bold
@@ -216,7 +262,7 @@ private fun PdfMasterScreen() {
                     }
                 ) {
                     Text(
-                        when (language) {
+                        text = when (language) {
                             "ar" -> "AR"
                             "fr" -> "FR"
                             else -> "EN"
@@ -226,45 +272,67 @@ private fun PdfMasterScreen() {
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
-
             Text(
-                if (isArabic) "جميع أدوات PDF في تطبيق واحد"
-                else "All your PDF tools in one app",
+                text = when (language) {
+                    "ar" -> "جميع أدوات PDF في تطبيق واحد"
+                    "fr" -> "Tous vos outils PDF dans une application"
+                    else -> "All PDF tools in one app"
+                },
                 color = Color.LightGray,
                 fontSize = 14.sp
             )
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(20.dp))
 
             ServiceButton(
-                title = if (isArabic) "قراءة PDF" else "Read PDF",
-                description = if (isArabic) "فتح وقراءة ملف PDF"
-                else "Open and read a PDF",
-                onClick = {
-                    action = PdfAction.READ
-                    pdfPicker.launch(arrayOf("application/pdf"))
-                }
-            )
+                title = when (language) {
+                    "ar" -> "قراءة PDF"
+                    "fr" -> "Lire PDF"
+                    else -> "Read PDF"
+                },
+                description = when (language) {
+                    "ar" -> "فتح وقراءة ملف PDF"
+                    "fr" -> "Ouvrir et lire un fichier PDF"
+                    else -> "Open and read a PDF file"
+                },
+                enabled = !busy
+            ) {
+                action = PdfAction.READ
+                pdfPicker.launch(arrayOf("application/pdf"))
+            }
 
             ServiceButton(
-                title = if (isArabic) "دمج ملفات PDF" else "Merge PDFs",
-                description = if (isArabic) "جمع عدة ملفات في ملف واحد"
-                else "Combine multiple PDF files",
-                onClick = {
-                    action = PdfAction.MERGE
-                    multiPdfPicker.launch(arrayOf("application/pdf"))
-                }
-            )
+                title = when (language) {
+                    "ar" -> "دمج ملفات PDF"
+                    "fr" -> "Fusionner les PDF"
+                    else -> "Merge PDFs"
+                },
+                description = when (language) {
+                    "ar" -> "جمع عدة ملفات في ملف واحد"
+                    "fr" -> "Combiner plusieurs fichiers"
+                    else -> "Combine multiple PDF files"
+                },
+                enabled = !busy
+            ) {
+                action = PdfAction.MERGE
+                multiPdfPicker.launch(arrayOf("application/pdf"))
+            }
 
             ServiceButton(
-                title = if (isArabic) "تقسيم PDF" else "Split PDF",
-                description = if (isArabic) "استخراج صفحات محددة"
-                else "Extract selected pages",
-                onClick = {
-                    action = PdfAction.SPLIT
-                }
-            )
+                title = when (language) {
+                    "ar" -> "تقسيم PDF"
+                    "fr" -> "Diviser PDF"
+                    else -> "Split PDF"
+                },
+                description = when (language) {
+                    "ar" -> "استخراج صفحات محددة"
+                    "fr" -> "Extraire des pages spécifiques"
+                    else -> "Extract selected pages"
+                },
+                enabled = !busy
+            ) {
+                action = PdfAction.SPLIT
+            }
 
             if (action == PdfAction.SPLIT) {
                 Card(
@@ -275,8 +343,11 @@ private fun PdfMasterScreen() {
                 ) {
                     Column(Modifier.padding(14.dp)) {
                         Text(
-                            if (isArabic) "رقم الصفحة الأولى والأخيرة"
-                            else "First and last page",
+                            text = if (isArabic) {
+                                "حدد الصفحات التي تريد استخراجها"
+                            } else {
+                                "Select the pages to extract"
+                            },
                             color = Color.White
                         )
 
@@ -284,31 +355,65 @@ private fun PdfMasterScreen() {
 
                         OutlinedTextField(
                             value = startPage,
-                            onValueChange = { startPage = it },
+                            onValueChange = {
+                                startPage = it.filter(Char::isDigit)
+                            },
                             label = {
                                 Text(if (isArabic) "من الصفحة" else "From page")
                             },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number
+                            ),
                             singleLine = true
                         )
+
+                        Spacer(Modifier.height(8.dp))
 
                         OutlinedTextField(
                             value = endPage,
-                            onValueChange = { endPage = it },
+                            onValueChange = {
+                                endPage = it.filter(Char::isDigit)
+                            },
                             label = {
                                 Text(if (isArabic) "إلى الصفحة" else "To page")
                             },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number
+                            ),
                             singleLine = true
                         )
 
+                        Spacer(Modifier.height(10.dp))
+
                         Button(
+                            enabled = !busy,
                             onClick = {
-                                pdfPicker.launch(arrayOf("application/pdf"))
+                                val first = startPage.toIntOrNull()
+                                val last = endPage.toIntOrNull()
+
+                                if (first == null || last == null ||
+                                    first < 1 || last < first
+                                ) {
+                                    status = if (isArabic) {
+                                        "أدخل أرقام صفحات صحيحة"
+                                    } else {
+                                        "Enter a valid page range"
+                                    }
+                                } else {
+                                    action = PdfAction.SPLIT
+                                    pdfPicker.launch(
+                                        arrayOf("application/pdf")
+                                    )
+                                }
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                if (isArabic) "اختار PDF وقسمو"
-                                else "Choose PDF and split"
+                                if (isArabic) {
+                                    "اختار PDF وقسمو"
+                                } else {
+                                    "Choose PDF and split"
+                                }
                             )
                         }
                     }
@@ -316,26 +421,35 @@ private fun PdfMasterScreen() {
             }
 
             ServiceButton(
-                title = if (isArabic) "ضغط PDF" else "Compress PDF",
-                description = if (isArabic) "تقليل الحجم مع احتمال نقص الجودة"
-                else "Reduce size with possible quality loss",
-                onClick = {
-                    action = PdfAction.COMPRESS
-                    pdfPicker.launch(arrayOf("application/pdf"))
-                }
-            )
+                title = when (language) {
+                    "ar" -> "ضغط PDF"
+                    "fr" -> "Compresser PDF"
+                    else -> "Compress PDF"
+                },
+                description = when (language) {
+                    "ar" -> "تقليل الحجم مع احتمال نقص الجودة"
+                    "fr" -> "Réduire la taille avec perte possible de qualité"
+                    else -> "Reduce size with possible quality loss"
+                },
+                enabled = !busy
+            ) {
+                action = PdfAction.COMPRESS
+                pdfPicker.launch(arrayOf("application/pdf"))
+            }
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = Color(0xFF3A2B1C)
                 )
             ) {
                 Text(
-                    if (isArabic) {
-                        "تنبيه: الضغط يحوّل صفحات PDF إلى صور. قد تنقص الجودة، ولن يبقى النص قابلاً للبحث أو النسخ، وقد لا يصبح الملف أصغر دائماً."
+                    text = if (isArabic) {
+                        "تنبيه: الضغط يحوّل صفحات PDF إلى صور. قد تنقص الجودة، وتضيع إمكانية البحث والنسخ والروابط، كما أن الحجم النهائي ليس مضموناً أن يكون أصغر."
                     } else {
-                        "Warning: compression converts PDF pages to images. Quality may decrease, searchable text and links are lost, and the result is not guaranteed to be smaller."
+                        "Warning: compression converts pages to images. Quality may decrease, searchable text and links are lost, and the output is not guaranteed to be smaller."
                     },
                     color = Color.White,
                     modifier = Modifier.padding(12.dp),
@@ -344,15 +458,21 @@ private fun PdfMasterScreen() {
             }
 
             ServiceButton(
-                title = if (isArabic) "تحويل الصور إلى PDF"
-                else "Images to PDF",
-                description = if (isArabic) "جمع الصور في ملف PDF"
-                else "Combine images into a PDF",
-                onClick = {
-                    action = PdfAction.IMAGES
-                    imagePicker.launch(arrayOf("image/*"))
-                }
-            )
+                title = when (language) {
+                    "ar" -> "تحويل الصور إلى PDF"
+                    "fr" -> "Images vers PDF"
+                    else -> "Images to PDF"
+                },
+                description = when (language) {
+                    "ar" -> "جمع الصور في ملف PDF"
+                    "fr" -> "Regrouper les images dans un PDF"
+                    else -> "Combine images into a PDF"
+                },
+                enabled = !busy
+            ) {
+                action = PdfAction.IMAGES
+                imagePicker.launch(arrayOf("image/*"))
+            }
 
             Spacer(Modifier.height(18.dp))
 
@@ -360,11 +480,11 @@ private fun PdfMasterScreen() {
                 CircularProgressIndicator(
                     color = Color(0xFF00D68F)
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
             }
 
             Text(
-                status,
+                text = status,
                 color = Color(0xFF00D68F),
                 fontSize = 14.sp
             )
@@ -373,7 +493,7 @@ private fun PdfMasterScreen() {
                 Spacer(Modifier.height(20.dp))
 
                 Text(
-                    if (isArabic) "معاينة PDF" else "PDF Preview",
+                    text = if (isArabic) "معاينة PDF" else "PDF Preview",
                     color = Color.White,
                     fontWeight = FontWeight.Bold
                 )
@@ -387,7 +507,7 @@ private fun PdfMasterScreen() {
                 )
 
                 Text(
-                    "${currentPage + 1} / $pageCount",
+                    text = "${currentPage + 1} / $pageCount",
                     color = Color.White
                 )
 
@@ -400,7 +520,9 @@ private fun PdfMasterScreen() {
                         onClick = {
                             val uri = readerUri
                             val targetPage = currentPage - 1
-                            if (uri != null) showPage(uri, targetPage)
+                            if (uri != null) {
+                                openReaderPage(uri, targetPage)
+                            }
                         }
                     ) {
                         Text(if (isArabic) "السابق" else "Previous")
@@ -411,7 +533,9 @@ private fun PdfMasterScreen() {
                         onClick = {
                             val uri = readerUri
                             val targetPage = currentPage + 1
-                            if (uri != null) showPage(uri, targetPage)
+                            if (uri != null) {
+                                openReaderPage(uri, targetPage)
+                            }
                         }
                     ) {
                         Text(if (isArabic) "التالي" else "Next")
@@ -419,10 +543,10 @@ private fun PdfMasterScreen() {
                 }
             }
 
-            Spacer(Modifier.height(30.dp))
+            Spacer(Modifier.height(25.dp))
 
             Text(
-                "PDF Master AI",
+                text = "PDF Master AI",
                 color = Color.Gray,
                 fontSize = 12.sp
             )
@@ -434,6 +558,7 @@ private fun PdfMasterScreen() {
 private fun ServiceButton(
     title: String,
     description: String,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Card(
@@ -449,6 +574,7 @@ private fun ServiceButton(
         ) {
             Button(
                 onClick = onClick,
+                enabled = enabled,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF00A878)
@@ -458,7 +584,7 @@ private fun ServiceButton(
             }
 
             Text(
-                description,
+                text = description,
                 color = Color.LightGray,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 4.dp)
@@ -468,25 +594,24 @@ private fun ServiceButton(
 }
 
 private fun renderPdfPage(
-    resolver: android.content.ContentResolver,
+    resolver: ContentResolver,
     uri: Uri,
     pageIndex: Int
 ): Pair<Bitmap, Int> {
-    val descriptor: ParcelFileDescriptor =
-        resolver.openFileDescriptor(uri, "r")
-            ?: throw IllegalArgumentException("Cannot open PDF")
+    val descriptor = resolver.openFileDescriptor(uri, "r")
+        ?: throw IllegalArgumentException("Cannot open PDF")
 
     descriptor.use { pfd ->
         PdfRenderer(pfd).use { renderer ->
-            if (pageIndex !in 0 until renderer.pageCount) {
-                throw IllegalArgumentException("Page does not exist")
+            require(pageIndex in 0 until renderer.pageCount) {
+                "Page does not exist"
             }
 
             renderer.openPage(pageIndex).use { page ->
                 val width = 1200
-                val height = (width.toFloat() * page.height / page.width)
-                    .toInt()
-                    .coerceAtLeast(1)
+                val height = (
+                    width.toFloat() * page.height / page.width
+                ).toInt().coerceAtLeast(1)
 
                 val bitmap = Bitmap.createBitmap(
                     width,
@@ -508,71 +633,78 @@ private fun renderPdfPage(
 }
 
 private fun mergePdfs(
-    resolver: android.content.ContentResolver,
+    resolver: ContentResolver,
     sources: List<Uri>,
     outputUri: Uri
 ): String {
-    require(sources.size >= 2) { "Choose at least two PDF files" }
+    require(sources.size >= 2) {
+        "Choose at least two PDF files"
+    }
 
-    val output = PDDocument()
+    val destination = PDDocument()
 
     try {
         for (uri in sources) {
-            val inputStream = resolver.openInputStream(uri)
+            val input = resolver.openInputStream(uri)
                 ?: throw IllegalArgumentException("Cannot open source PDF")
 
-            inputStream.use { stream ->
+            input.use { stream ->
                 PDDocument.load(stream).use { source ->
                     for (index in 0 until source.numberOfPages) {
-                        output.importPage(source.getPage(index))
+                        destination.importPage(source.getPage(index))
                     }
                 }
             }
         }
 
-        val outputStream = resolver.openOutputStream(outputUri)
+        val output = resolver.openOutputStream(outputUri)
             ?: throw IllegalArgumentException("Cannot create output file")
 
-        outputStream.use { stream ->
-            output.save(stream)
+        output.use { stream ->
+            destination.save(stream)
         }
     } finally {
-        output.close()
+        destination.close()
     }
 
     return "PDF files merged successfully"
 }
 
 private fun splitPdf(
-    resolver: android.content.ContentResolver,
+    resolver: ContentResolver,
     sourceUri: Uri,
     outputUri: Uri,
     firstPage: Int,
     lastPage: Int
 ): String {
-    val inputStream = resolver.openInputStream(sourceUri)
+    val input = resolver.openInputStream(sourceUri)
         ?: throw IllegalArgumentException("Cannot open PDF")
 
-    inputStream.use { stream ->
+    input.use { stream ->
         PDDocument.load(stream).use { source ->
             require(firstPage >= 1 && lastPage >= firstPage) {
                 "Invalid page range"
             }
+
             require(lastPage <= source.numberOfPages) {
                 "Last page exceeds PDF page count (${source.numberOfPages})"
             }
 
-            PDDocument().use { output ->
+            val outputDocument = PDDocument()
+
+            try {
                 for (index in (firstPage - 1) until lastPage) {
-                    output.importPage(source.getPage(index))
+                    outputDocument.importPage(source.getPage(index))
                 }
 
-                val outputStream = resolver.openOutputStream(outputUri)
+                val output = resolver.openOutputStream(outputUri)
                     ?: throw IllegalArgumentException("Cannot create output file")
 
-                outputStream.use { out ->
-                    output.save(out)
+                output.use { destination ->
+                    outputDocument.save(destination)
                 }
+            } finally {
+                outputDocument.close()
             }
         }
     }
@@ -581,7 +713,7 @@ private fun splitPdf(
 }
 
 private fun compressPdf(
-    resolver: android.content.ContentResolver,
+    resolver: ContentResolver,
     sourceUri: Uri,
     outputUri: Uri
 ): String {
@@ -590,7 +722,9 @@ private fun compressPdf(
 
     descriptor.use { pfd ->
         PdfRenderer(pfd).use { renderer ->
-            PdfDocument().use { output ->
+            val outputDocument = PdfDocument()
+
+            try {
                 for (index in 0 until renderer.pageCount) {
                     renderer.openPage(index).use { page ->
                         val width = 1000
@@ -604,44 +738,49 @@ private fun compressPdf(
                             Bitmap.Config.RGB_565
                         )
 
-                        page.render(
-                            bitmap,
-                            null,
-                            null,
-                            PdfRenderer.Page.RENDER_MODE_FOR_PRINT
-                        )
+                        try {
+                            page.render(
+                                bitmap,
+                                null,
+                                null,
+                                PdfRenderer.Page.RENDER_MODE_FOR_PRINT
+                            )
 
-                        val pageWidth = 595
-                        val pageHeight = (
-                            pageWidth.toFloat() * page.height / page.width
-                        ).toInt().coerceAtLeast(1)
+                            val pageWidth = 595
+                            val pageHeight = (
+                                pageWidth.toFloat() * page.height / page.width
+                            ).toInt().coerceAtLeast(1)
 
-                        val info = PdfDocument.PageInfo.Builder(
-                            pageWidth,
-                            pageHeight,
-                            index + 1
-                        ).create()
+                            val info = PdfDocument.PageInfo.Builder(
+                                pageWidth,
+                                pageHeight,
+                                index + 1
+                            ).create()
 
-                        val newPage = output.startPage(info)
+                            val newPage = outputDocument.startPage(info)
 
-                        newPage.canvas.drawBitmap(
-                            bitmap,
-                            null,
-                            Rect(0, 0, pageWidth, pageHeight),
-                            null
-                        )
+                            newPage.canvas.drawBitmap(
+                                bitmap,
+                                null,
+                                Rect(0, 0, pageWidth, pageHeight),
+                                null
+                            )
 
-                        output.finishPage(newPage)
-                        bitmap.recycle()
+                            outputDocument.finishPage(newPage)
+                        } finally {
+                            bitmap.recycle()
+                        }
                     }
                 }
 
-                val outputStream = resolver.openOutputStream(outputUri)
+                val output = resolver.openOutputStream(outputUri)
                     ?: throw IllegalArgumentException("Cannot create output file")
 
-                outputStream.use { stream ->
-                    output.writeTo(stream)
+                output.use { stream ->
+                    outputDocument.writeTo(stream)
                 }
+            } finally {
+                outputDocument.close()
             }
         }
     }
@@ -650,13 +789,17 @@ private fun compressPdf(
 }
 
 private fun imagesToPdf(
-    resolver: android.content.ContentResolver,
+    resolver: ContentResolver,
     imageUris: List<Uri>,
     outputUri: Uri
 ): String {
-    require(imageUris.isNotEmpty()) { "Choose at least one image" }
+    require(imageUris.isNotEmpty()) {
+        "Choose at least one image"
+    }
 
-    PdfDocument().use { document ->
+    val document = PdfDocument()
+
+    try {
         imageUris.forEachIndexed { index, uri ->
             val input = resolver.openInputStream(uri)
                 ?: throw IllegalArgumentException("Cannot open image")
@@ -665,50 +808,55 @@ private fun imagesToPdf(
                 BitmapFactory.decodeStream(it)
             } ?: throw IllegalArgumentException("Unsupported image")
 
-            val pageWidth = 595
-            val pageHeight = 842
+            try {
+                val pageWidth = 595
+                val pageHeight = 842
 
-            val info = PdfDocument.PageInfo.Builder(
-                pageWidth,
-                pageHeight,
-                index + 1
-            ).create()
+                val info = PdfDocument.PageInfo.Builder(
+                    pageWidth,
+                    pageHeight,
+                    index + 1
+                ).create()
 
-            val page = document.startPage(info)
+                val page = document.startPage(info)
 
-            val scale = min(
-                pageWidth.toFloat() / bitmap.width,
-                pageHeight.toFloat() / bitmap.height
-            )
+                val scale = min(
+                    pageWidth.toFloat() / bitmap.width,
+                    pageHeight.toFloat() / bitmap.height
+                )
 
-            val drawWidth = (bitmap.width * scale).toInt()
-            val drawHeight = (bitmap.height * scale).toInt()
+                val drawWidth = (bitmap.width * scale).toInt()
+                val drawHeight = (bitmap.height * scale).toInt()
 
-            val left = (pageWidth - drawWidth) / 2
-            val top = (pageHeight - drawHeight) / 2
+                val left = (pageWidth - drawWidth) / 2
+                val top = (pageHeight - drawHeight) / 2
 
-            page.canvas.drawBitmap(
-                bitmap,
-                null,
-                Rect(
-                    left,
-                    top,
-                    left + drawWidth,
-                    top + drawHeight
-                ),
-                null
-            )
+                page.canvas.drawBitmap(
+                    bitmap,
+                    null,
+                    Rect(
+                        left,
+                        top,
+                        left + drawWidth,
+                        top + drawHeight
+                    ),
+                    null
+                )
 
-            document.finishPage(page)
-            bitmap.recycle()
+                document.finishPage(page)
+            } finally {
+                bitmap.recycle()
+            }
         }
 
-        val outputStream = resolver.openOutputStream(outputUri)
+        val output = resolver.openOutputStream(outputUri)
             ?: throw IllegalArgumentException("Cannot create output file")
 
-        outputStream.use { stream ->
+        output.use { stream ->
             document.writeTo(stream)
         }
+    } finally {
+        document.close()
     }
 
     return "Images converted to PDF successfully"
